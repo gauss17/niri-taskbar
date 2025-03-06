@@ -1,0 +1,13 @@
+button {
+  background: transparent;
+  margin: 0;
+  padding: 2px 4px;
+}
+
+button.focused {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+button:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
