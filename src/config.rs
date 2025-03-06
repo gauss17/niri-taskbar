@@ -30,15 +30,14 @@ impl Config {
         app_id: &str,
         title: &'a str,
     ) -> Box<dyn Iterator<Item = &'a str> + 'a> {
-        if let Some(configs) = self.apps.get(app_id) {
-            Box::new(
+        match self.apps.get(app_id) {
+            Some(configs) => Box::new(
                 configs
                     .iter()
                     .filter(|config| config.re.is_match(title))
                     .map(|config| config.class.as_str()),
-            )
-        } else {
-            Box::new(std::iter::empty())
+            ),
+            None => Box::new(std::iter::empty()),
         }
     }
 }
