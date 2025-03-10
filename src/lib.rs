@@ -70,17 +70,14 @@ async fn init(info: &waybar_cffi::InitInfo, state: State) -> Result<(), Error> {
         while let Some(event) = stream.next().await {
             match event {
                 Event::Notification(notification) => {
-                    // We'll try to set the urgent class on the relevant window
-                    // if we can figure out which toplevel is associated with
-                    // the notification.
-                    //
-                    // First, we need to see if there even is a sender PID in
-                    // the notification.
-                    if let Some(mut pid) = notification.hints.sender_pid {
-                        if let Some(last) = &last_snapshot {
-                            // The heuristic we'll use is to walk up from the
-                            // sender PID and see if any of the parents are
-                            // toplevels.
+                    if let Some(last) = &last_snapshot {
+                        // We'll try to set the urgent class on the relevant
+                        // window if we can figure out which toplevel is
+                        // associated with the notification.
+                        if let Some(mut pid) = notification.hints.sender_pid {
+                            // If we have the sender PID, then the heuristic
+                            // we'll use is to walk up from the sender PID and
+                            // see if any of the parents are toplevels.
                             //
                             // The easiest way to do that is with a map.
                             let pids = PidWindowMap::new(last.iter());
@@ -110,11 +107,30 @@ async fn init(info: &waybar_cffi::InitInfo, state: State) -> Result<(), Error> {
                                         // On error, we'll log but do nothing
                                         // else: this shouldn't be fatal for the
                                         // bar.
-                                        eprintln!(
-                                            "error walking up from process {}: {e}",
-                                            notification.hints.sender_pid.unwrap_or_default()
-                                        );
+                                        eprintln!("error walking up from process {pid}: {e}");
                                         break;
+                                    }
+                                }
+                            }
+                        } else if let Some(desktop_entry) =
+                            &notification.notification().hints.desktop_entry
+                        {
+                            // Matching on the desktop entry is less precise —
+                            // if multiple copies of the app are running, we
+                            // can't distinguish between them — but it's better
+                            // than nothing. Probably. (Hence why there's a
+                            // configuration entry.)
+                            if state.config().notifications_should_use_desktop_entry() {
+                                let mapped = state.config().notifications_app_map(desktop_entry);
+
+                                for window in last.iter() {
+                                    let window_app_id = window.app_id.as_deref();
+                                    if window_app_id == Some(&desktop_entry)
+                                        || window_app_id == mapped
+                                    {
+                                        if let Some(button) = buttons.get(&window.id) {
+                                            button.set_urgent();
+                                        }
                                     }
                                 }
                             }

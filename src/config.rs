@@ -9,8 +9,17 @@ use serde::{Deserialize, Deserializer};
 pub struct Config {
     #[serde(default)]
     apps: HashMap<String, Vec<AppConfig>>,
+    notifications: Option<Notifications>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct Notifications {
     #[serde(default)]
-    notifications: bool,
+    enabled: bool,
+    #[serde(default)]
+    ignore_desktop_entry: bool,
+    #[serde(default)]
+    map_app_ids: HashMap<String, String>,
 }
 
 impl Config {
@@ -47,6 +56,26 @@ impl Config {
     /// Returns true if notification support is enabled.
     pub fn notifications_enabled(&self) -> bool {
         self.notifications
+            .as_ref()
+            .map(|notifications| notifications.enabled)
+            .unwrap_or(true)
+    }
+
+    /// Returns any mapping that might exist for this app ID.
+    pub fn notifications_app_map(&self, app_id: &str) -> Option<&'_ str> {
+        self.notifications
+            .as_ref()
+            .and_then(|notifications| notifications.map_app_ids.get(app_id))
+            .map(|app_id| app_id.as_str())
+    }
+
+    /// Returns true if notification support should use the desktop entry as a
+    /// fallback.
+    pub fn notifications_should_use_desktop_entry(&self) -> bool {
+        self.notifications
+            .as_ref()
+            .map(|notifications| !notifications.ignore_desktop_entry)
+            .unwrap_or(true)
     }
 }
 
