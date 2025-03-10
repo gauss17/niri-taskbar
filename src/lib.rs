@@ -74,7 +74,7 @@ async fn init(info: &waybar_cffi::InitInfo, state: State) -> Result<(), Error> {
                         // We'll try to set the urgent class on the relevant
                         // window if we can figure out which toplevel is
                         // associated with the notification.
-                        if let Some(mut pid) = notification.hints.sender_pid {
+                        if let Some(mut pid) = notification.pid() {
                             // If we have the sender PID, then the heuristic
                             // we'll use is to walk up from the sender PID and
                             // see if any of the parents are toplevels.

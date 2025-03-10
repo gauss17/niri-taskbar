@@ -9,7 +9,7 @@ use crate::{
     error::Error,
     icon,
     niri::{Niri, Snapshot, WindowStream},
-    notify::{self, Notification},
+    notify::{self, EnrichedNotification},
 };
 
 /// Global state for the taskbar.
@@ -66,7 +66,7 @@ struct Inner {
 }
 
 pub enum Event {
-    Notification(Notification),
+    Notification(EnrichedNotification),
     WindowSnapshot(Snapshot),
 }
 
