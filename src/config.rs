@@ -11,6 +11,8 @@ pub struct Config {
     apps: HashMap<String, Vec<AppConfig>>,
     #[serde(default)]
     notifications: Notifications,
+    #[serde(default)]
+    show_all_outputs: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,6 +94,10 @@ impl Config {
 
     pub fn notifications_use_fuzzy_matching(&self) -> bool {
         self.notifications.use_fuzzy_matching
+    }
+
+    pub fn show_all_outputs(&self) -> bool {
+        self.show_all_outputs
     }
 }
 

@@ -976,6 +976,7 @@ dependencies = [
  "anyhow",
  "async-channel",
  "async-stream",
+ "bitflags",
  "freedesktop-icons",
  "futures",
  "itertools",

@@ -1,5 +1,7 @@
-use niri_ipc::{Action, Reply, Request, socket::Socket};
-pub use state::Snapshot;
+use std::collections::HashMap;
+
+use niri_ipc::{Action, Output, Reply, Request, socket::Socket};
+pub use state::{Snapshot, Window};
 pub use window_stream::WindowStream;
 
 use crate::error::Error;
@@ -23,6 +25,12 @@ impl Niri {
     pub fn activate_window(&self, id: u64) -> Result<(), Error> {
         let reply = request(Request::Action(Action::FocusWindow { id }))?;
         reply::typed!(Handled, reply)
+    }
+
+    /// Returns the current outputs.
+    pub fn outputs(&self) -> Result<HashMap<String, Output>, Error> {
+        let reply = request(Request::Outputs)?;
+        reply::typed!(Outputs, reply)
     }
 
     /// Returns a stream of window snapshots.

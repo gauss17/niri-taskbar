@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, btree_map::Entry},
     sync::LazyLock,
 };
 
@@ -7,15 +7,16 @@ use button::Button;
 use config::Config;
 use error::Error;
 use futures::StreamExt;
-use niri_ipc::Window;
+use niri::{Snapshot, Window};
 use notify::EnrichedNotification;
+use output::Matcher;
 use process::Process;
 use state::{Event, State};
 use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan};
 use waybar_cffi::{
     Module,
     gtk::{
-        self, Orientation,
+        self, Orientation, gio,
         glib::MainContext,
         traits::{BoxExt, ContainerExt, StyleContextExt, WidgetExt},
     },
@@ -28,6 +29,7 @@ mod error;
 mod icon;
 mod niri;
 mod notify;
+mod output;
 mod process;
 mod state;
 
@@ -82,7 +84,7 @@ async fn init(info: &waybar_cffi::InitInfo, state: State) -> Result<(), Error> {
 struct Instance {
     buttons: BTreeMap<u64, Button>,
     container: gtk::Box,
-    last_snapshot: Option<Vec<Window>>,
+    last_snapshot: Option<Snapshot>,
     state: State,
 }
 
@@ -97,16 +99,96 @@ impl Instance {
     }
 
     pub async fn task(&mut self) {
+        // We have to build the output filter here, because until the Glib event loop has run the
+        // container hasn't been realised, which means we can't figure out which output we're on.
+        let output_filter = self.build_output_filter().await;
+
         let mut stream = Box::pin(self.state.event_stream());
         while let Some(event) = stream.next().await {
             match event {
                 Event::Notification(notification) => self.process_notification(notification).await,
-                Event::WindowSnapshot(windows) => self.process_window_snapshot(windows).await,
+                Event::WindowSnapshot(windows) => {
+                    self.process_window_snapshot(windows, &output_filter).await
+                }
             }
         }
     }
 
     #[tracing::instrument(level = "DEBUG", skip(self))]
+    async fn build_output_filter(&self) -> output::Filter {
+        if self.state.config().show_all_outputs() {
+            return output::Filter::ShowAll;
+        }
+
+        // OK, so we need to figure out what output we're on. Easy, right?
+        //
+        // Not so fast!
+        //
+        // In-tree Waybar modules have access to a Wayland client called `Client`, which they can
+        // use to access the `wl_display` the bar is created against, and further access metadata
+        // from there. Unfortunately, none of that is exposed in CFFI, and, honestly, I'm not really
+        // sure how you would trivially wrap it in a C API.
+        //
+        // We have the Gtk 3 container, though, so that's something — we have to wait until the
+        // window has been realised, but that's happened by the time we're in the main loop
+        // callback. The problem is that we're also using Gdk 3, which doesn't expose the connection
+        // name of the monitor in use, which is the only thing we can match against the Niri output
+        // configuration.
+        //
+        // Now, this wouldn't be so bad on its own, because we _can_ get to the `wl_output` via
+        // `gdkwayland`, and version 4 of the core Wayland protocol includes the output name.
+        // Unfortunately, we have no way of accessing Gdk's Wayland connection, and Wayland
+        // identifiers aren't stable across connections, so we can't just connect to Wayland
+        // ourselves and enumerate the outputs. (Trust me, I tried.)
+        //
+        // So, until Waybar migrates to Gtk 4, that leaves us without a truly reliable solution.
+        //
+        // What we'll do instead is match up what we can. Niri can tell us everything we want to
+        // know about the output, and Gdk 3 does include things like the output geometry, make, and
+        // model. So we'll match on those and hope for the best.
+        let niri = self.state.niri().clone();
+        let outputs = match gio::spawn_blocking(move || niri.outputs()).await {
+            Ok(Ok(outputs)) => outputs,
+            Ok(Err(e)) => {
+                eprintln!("cannot get Niri outputs: {e}");
+                return output::Filter::ShowAll;
+            }
+            Err(_) => {
+                eprintln!("error received from gio while waiting for task");
+                return output::Filter::ShowAll;
+            }
+        };
+
+        // If there's only one output, then none of this matching stuff matters anyway.
+        if outputs.len() == 1 {
+            return output::Filter::ShowAll;
+        }
+
+        let Some(window) = self.container.window() else {
+            eprintln!("cannot get Gdk window for container");
+            return output::Filter::ShowAll;
+        };
+
+        let display = window.display();
+        let Some(monitor) = display.monitor_at_window(&window) else {
+            eprintln!(
+                "cannot get monitor for window at {:?} on display {display:?}",
+                window.geometry()
+            );
+            return output::Filter::ShowAll;
+        };
+
+        for (name, output) in outputs.into_iter() {
+            let matches = output::Matcher::new(&monitor, &output);
+            if matches == Matcher::all() {
+                return output::Filter::Only(name);
+            }
+        }
+
+        eprintln!("no Niri output matched the Gdk monitor {monitor:?}");
+        output::Filter::ShowAll
+    }
+
     async fn process_notification(&mut self, notification: EnrichedNotification) {
         // We'll try to set the urgent class on the relevant window if we can
         // figure out which toplevel is associated with the notification.
@@ -234,20 +316,25 @@ impl Instance {
     }
 
     #[tracing::instrument(level = "DEBUG", skip(self))]
-    async fn process_window_snapshot(&mut self, windows: Vec<Window>) {
+    async fn process_window_snapshot(&mut self, windows: Snapshot, filter: &output::Filter) {
         // We need to track which, if any, windows are no longer present.
         let mut omitted = self.buttons.keys().copied().collect::<BTreeSet<_>>();
 
-        for window in windows.iter() {
-            let button = self.buttons.entry(window.id).or_insert_with(|| {
-                let button = Button::new(&self.state, window);
+        for window in windows
+            .iter()
+            .filter(|window| filter.should_show(window.output().unwrap_or_default()))
+        {
+            let button = match self.buttons.entry(window.id) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => {
+                    let button = Button::new(&self.state, window);
 
-                // Implicitly adding the button widget to the box as we create
-                // it simplifies reordering, since it means we can just do it as
-                // we go.
-                self.container.add(button.widget());
-                button
-            });
+                    // Implicitly adding the button widget to the box as we create it simplifies
+                    // reordering, since it means we can just do it as we go.
+                    self.container.add(button.widget());
+                    entry.insert(button)
+                }
+            };
 
             // Update the window properties.
             button.set_focus(window.is_focused);
