@@ -40,7 +40,7 @@ impl State {
         &self.0.niri
     }
 
-    pub async fn event_stream(&self) -> impl Stream<Item = Event> + use<> {
+    pub fn event_stream(&self) -> impl Stream<Item = Event> + use<> {
         let (tx, rx) = async_channel::unbounded();
 
         if self.config().notifications_enabled() {

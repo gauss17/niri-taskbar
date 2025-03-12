@@ -97,8 +97,7 @@ impl Instance {
     }
 
     pub async fn task(&mut self) {
-        let mut stream = Box::pin(self.state.event_stream().await);
-
+        let mut stream = Box::pin(self.state.event_stream());
         while let Some(event) = stream.next().await {
             match event {
                 Event::Notification(notification) => self.process_notification(notification).await,
