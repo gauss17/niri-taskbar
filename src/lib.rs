@@ -171,7 +171,7 @@ impl Instance {
 
         let display = window.display();
         let Some(monitor) = display.monitor_at_window(&window) else {
-            tracing::warn!(?display, geometry = ?window.geometry(), "cannot get monitor for window");
+            tracing::warn!(display = ?window.display(), geometry = ?window.geometry(), "cannot get monitor for window");
             return output::Filter::ShowAll;
         };
 
