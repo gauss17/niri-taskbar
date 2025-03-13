@@ -150,11 +150,11 @@ impl Instance {
         let outputs = match gio::spawn_blocking(move || niri.outputs()).await {
             Ok(Ok(outputs)) => outputs,
             Ok(Err(e)) => {
-                eprintln!("cannot get Niri outputs: {e}");
+                tracing::warn!(%e, "cannot get Niri outputs");
                 return output::Filter::ShowAll;
             }
             Err(_) => {
-                eprintln!("error received from gio while waiting for task");
+                tracing::error!("error received from gio while waiting for task");
                 return output::Filter::ShowAll;
             }
         };
@@ -165,16 +165,13 @@ impl Instance {
         }
 
         let Some(window) = self.container.window() else {
-            eprintln!("cannot get Gdk window for container");
+            tracing::warn!("cannot get Gdk window for container");
             return output::Filter::ShowAll;
         };
 
         let display = window.display();
         let Some(monitor) = display.monitor_at_window(&window) else {
-            eprintln!(
-                "cannot get monitor for window at {:?} on display {display:?}",
-                window.geometry()
-            );
+            tracing::warn!(?display, geometry = ?window.geometry, "cannot get monitor for window");
             return output::Filter::ShowAll;
         };
 
@@ -185,7 +182,7 @@ impl Instance {
             }
         }
 
-        eprintln!("no Niri output matched the Gdk monitor {monitor:?}");
+        tracing::warn!(?monitor, "no Niri output matched the Gdk monitor");
         output::Filter::ShowAll
     }
 

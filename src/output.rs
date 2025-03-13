@@ -32,7 +32,7 @@ bitflags::bitflags! {
 impl Matcher {
     pub fn new(monitor: &Monitor, output: &Output) -> Self {
         let Some(logical) = &output.logical else {
-            eprintln!("output {} does not have a logical output", output.name);
+            tracing::info!(name = output.name, "output does not have a logical output");
             return Self::empty();
         };
 

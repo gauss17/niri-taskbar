@@ -31,7 +31,7 @@ thread_local! {
     static BUTTON_CSS_PROVIDER: CssProvider = {
         let css = CssProvider::new();
         if let Err(e) = css.load_from_data(include_bytes!("style.css")) {
-            eprintln!("css parse error: {e:?}");
+            tracing::error!(%e, "CSS parse error");
         }
 
         css
@@ -253,7 +253,7 @@ impl Button {
                 |path| match Pixbuf::from_file_at_scale(path, size, size, true) {
                     Ok(pixbuf) => Some(pixbuf),
                     Err(e) => {
-                        eprintln!("cannot load icon at {path:?}: {e:?}");
+                        tracing::info!(%e, ?path, "cannot load icon");
                         None
                     }
                 },
