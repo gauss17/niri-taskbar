@@ -15,6 +15,7 @@ impl Process {
     ///
     /// Under the hood, this parses `/proc/{pid}/stat` to get the parent PID,
     /// which is all we care about right now.
+    #[tracing::instrument(level = "TRACE", err)]
     pub async fn new(pid: i64) -> Result<Self, Error> {
         // Implementation note: there are any number of crates that can do this,
         // but honestly, most of them are either buggy, introduce a new build

@@ -6,7 +6,6 @@ use waybar_cffi::gtk::glib;
 
 use crate::{
     config::Config,
-    error::Error,
     icon,
     niri::{Niri, Snapshot, WindowStream},
     notify::{self, EnrichedNotification},
@@ -41,20 +40,20 @@ impl State {
         &self.0.niri
     }
 
-    pub async fn event_stream(&self) -> Result<impl Stream<Item = Event> + use<>, Error> {
+    pub async fn event_stream(&self) -> impl Stream<Item = Event> + use<> {
         let (tx, rx) = async_channel::unbounded();
 
         if self.config().notifications_enabled() {
             glib::spawn_future_local(notify_stream(tx.clone()));
         }
 
-        glib::spawn_future_local(window_stream(tx, self.niri().window_stream()?));
+        glib::spawn_future_local(window_stream(tx, self.niri().window_stream()));
 
-        Ok(async_stream::stream! {
+        async_stream::stream! {
             while let Ok(event) = rx.recv().await {
                 yield event;
             }
-        })
+        }
     }
 }
 
@@ -75,7 +74,7 @@ async fn notify_stream(tx: Sender<Event>) {
 
     while let Some(notification) = stream.next().await {
         if let Err(e) = tx.send(Event::Notification(notification)).await {
-            eprintln!("error sending notification: {e}");
+            tracing::error!(%e, "error sending notification");
         }
     }
 }
@@ -83,7 +82,7 @@ async fn notify_stream(tx: Sender<Event>) {
 async fn window_stream(tx: Sender<Event>, window_stream: WindowStream) {
     while let Some(snapshot) = window_stream.next().await {
         if let Err(e) = tx.send(Event::WindowSnapshot(snapshot)).await {
-            eprintln!("error sending window snapshot: {e}");
+            tracing::error!(%e, "error sending window snapshot");
         }
     }
 }

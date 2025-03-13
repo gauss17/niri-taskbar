@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    sync::LazyLock,
+};
 
 use button::Button;
 use config::Config;
@@ -8,6 +11,7 @@ use niri_ipc::Window;
 use notify::EnrichedNotification;
 use process::Process;
 use state::{Event, State};
+use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan};
 use waybar_cffi::{
     Module,
     gtk::{
@@ -27,18 +31,31 @@ mod notify;
 mod process;
 mod state;
 
+static TRACING: LazyLock<()> = LazyLock::new(|| {
+    if let Err(e) = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_span_events(FmtSpan::CLOSE)
+        .try_init()
+    {
+        eprintln!("cannot install global tracing subscriber: {e}");
+    }
+});
+
 struct TaskbarModule {}
 
 impl Module for TaskbarModule {
     type Config = Config;
 
     fn init(info: &waybar_cffi::InitInfo, config: Config) -> Self {
+        // Ensure tracing-subscriber is initialised.
+        *TRACING;
+
         let module = Self {};
         let state = State::new(config);
 
         let context = MainContext::default();
         if let Err(e) = context.block_on(init(info, state)) {
-            eprintln!("niri taskbar module init error: {e:?}");
+            tracing::error!(%e, "Niri taskbar module init failed");
         }
 
         module
@@ -47,6 +64,7 @@ impl Module for TaskbarModule {
 
 waybar_module!(TaskbarModule);
 
+#[tracing::instrument(level = "DEBUG", skip_all, err)]
 async fn init(info: &waybar_cffi::InitInfo, state: State) -> Result<(), Error> {
     // Set up the box that we'll use to contain the actual window buttons.
     let root = info.get_root_widget();
@@ -78,10 +96,8 @@ impl Instance {
         }
     }
 
-    pub async fn task(&mut self) -> Result<(), Error> {
-        let mut stream = Box::pin(self.state.event_stream().await?);
-
-        dbg!(self.state.config());
+    pub async fn task(&mut self) {
+        let mut stream = Box::pin(self.state.event_stream().await);
 
         while let Some(event) = stream.next().await {
             match event {
@@ -89,10 +105,9 @@ impl Instance {
                 Event::WindowSnapshot(windows) => self.process_window_snapshot(windows).await,
             }
         }
-
-        Ok(())
     }
 
+    #[tracing::instrument(level = "DEBUG", skip(self))]
     async fn process_notification(&mut self, notification: EnrichedNotification) {
         // We'll try to set the urgent class on the relevant window if we can
         // figure out which toplevel is associated with the notification.
@@ -141,7 +156,7 @@ impl Instance {
                         // On error, we'll log but do nothing else: this
                         // shouldn't be fatal for the bar, since it's possible
                         // the process has simply already exited.
-                        eprintln!("error walking up from process {pid}: {e}");
+                        tracing::info!(pid, %e, "error walking up process tree");
                         break;
                     }
                 }
@@ -219,6 +234,7 @@ impl Instance {
         }
     }
 
+    #[tracing::instrument(level = "DEBUG", skip(self))]
     async fn process_window_snapshot(&mut self, windows: Vec<Window>) {
         // We need to track which, if any, windows are no longer present.
         let mut omitted = self.buttons.keys().copied().collect::<BTreeSet<_>>();

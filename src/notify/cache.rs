@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashMap,
+    fmt::Debug,
     time::{Duration, SystemTime},
 };
 
@@ -18,7 +19,7 @@ use zbus::{
 /// A basic cache that maps D-Bus connections to PIDs.
 #[derive(Debug, Clone)]
 pub struct ConnectionCache {
-    tx: Sender<Message>,
+    tx: Sender<Request>,
 }
 
 impl ConnectionCache {
@@ -30,7 +31,7 @@ impl ConnectionCache {
         let (tx, rx) = async_channel::unbounded();
         glib::spawn_future_local(async move {
             if let Err(e) = worker(rx, expiry).await {
-                eprintln!("connection cache worker error: {e}");
+                tracing::error!(%e, "connection cache worker error");
             }
         });
 
@@ -41,17 +42,18 @@ impl ConnectionCache {
     ///
     /// The D-Bus server will be asked for the PID if it is not already in the
     /// cache.
-    pub async fn get(&self, connection: impl ToString) -> Option<u32> {
+    #[tracing::instrument(level = "TRACE", skip(self))]
+    pub async fn get(&self, connection: impl ToString + Debug) -> Option<u32> {
         let (tx, rx) = oneshot::channel();
         if let Err(e) = self
             .tx
-            .send(Message::Get {
+            .send(Request::Get {
                 connection: connection.to_string(),
                 result: tx,
             })
             .await
         {
-            eprintln!("unexpected error sending to connection cache: {e}");
+            tracing::error!(%e, "error sending request to connection cache");
             return None;
         }
 
@@ -60,7 +62,7 @@ impl ConnectionCache {
 }
 
 #[derive(Debug)]
-enum Message {
+enum Request {
     Get {
         connection: String,
         result: oneshot::Sender<Option<u32>>,
@@ -75,7 +77,7 @@ struct Entry {
 
 static DBUS_INTERFACE: &str = "org.freedesktop.DBus";
 
-async fn worker(rx: Receiver<Message>, expiry: Duration) -> Result<(), Box<dyn std::error::Error>> {
+async fn worker(rx: Receiver<Request>, expiry: Duration) -> anyhow::Result<()> {
     // The actual cache implementation here is extremely straightforward: we'll
     // maintain a HashMap on this task that we add to as we see new connections
     // to D-Bus, and also as we get requests for D-Bus connections that may
@@ -121,12 +123,12 @@ async fn worker(rx: Receiver<Message>, expiry: Duration) -> Result<(), Box<dyn s
                     }
                     Ok(None) => {
                         // Stream closed; error and return.
-                        eprintln!("D-Bus monitor stream closed unexpectedly");
+                        tracing::error!("D-Bus monitor stream closed unexpectedly");
                         break;
                     }
                     Err(e) => {
-                        eprintln!("D-Bus monitor stream error: {e}");
-                        return Err(Box::new(e));
+                        tracing::error!(%e, "D-Bus monitor stream error");
+                        anyhow::bail!(e);
                     }
                 }
             }
@@ -172,9 +174,9 @@ async fn handle_zbus_message<'a>(
     }
 }
 
-async fn handle_message<'a>(cache: &mut Cache, dbus_proxy: &DBusProxy<'a>, message: Message) {
+async fn handle_message<'a>(cache: &mut Cache, dbus_proxy: &DBusProxy<'a>, message: Request) {
     match message {
-        Message::Get { connection, result } => {
+        Request::Get { connection, result } => {
             if let Some(maybe_pid) = cache.get(&connection) {
                 let _ = result.send(maybe_pid);
             } else if let Ok(name) = UniqueName::try_from(connection.as_str()) {

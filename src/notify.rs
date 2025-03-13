@@ -25,8 +25,8 @@ pub fn stream() -> impl Stream<Item = EnrichedNotification> {
     let (tx, rx) = async_channel::unbounded();
     glib::spawn_future_local(async move {
         match monitor_dbus(tx).await {
-            Ok(()) => eprintln!("no longer monitoring D-Bus"),
-            Err(e) => eprintln!("D-Bus error: {e}"),
+            Ok(()) => tracing::info!("no longer monitoring D-Bus"),
+            Err(e) => tracing::error!(%e, "D-Bus error"),
         }
     });
 
@@ -39,6 +39,7 @@ pub fn stream() -> impl Stream<Item = EnrichedNotification> {
 
 /// A FDO notification with the PID of the connection that sent it, if
 /// available.
+#[derive(Debug, Clone)]
 pub struct EnrichedNotification {
     notification: Notification,
     pid: Option<u32>,
@@ -133,7 +134,8 @@ pub struct Hints {
 static INTERFACE: &str = "org.freedesktop.Notifications";
 static METHOD: &str = "Notify";
 
-async fn monitor_dbus(tx: Sender<EnrichedNotification>) -> Result<(), Box<dyn std::error::Error>> {
+#[tracing::instrument(level = "TRACE", skip_all, err)]
+async fn monitor_dbus(tx: Sender<EnrichedNotification>) -> anyhow::Result<()> {
     let cache = cache::ConnectionCache::new(Duration::from_secs(86400));
 
     let conn = Connection::session().await?;
