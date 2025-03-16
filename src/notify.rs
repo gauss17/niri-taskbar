@@ -126,7 +126,8 @@ pub struct Hints {
     pub suppress_sound: Option<bool>,
     pub transient: Option<bool>,
     pub sender_pid: Option<i64>,
-    pub urgency: Option<u8>,
+    // This is specified as a BYTE, but in practice seems to always be a u32.
+    pub urgency: Option<u32>,
     pub x: Option<i32>,
     pub y: Option<i32>,
 }
