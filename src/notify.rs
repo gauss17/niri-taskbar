@@ -1,12 +1,13 @@
 use std::{ops::Deref, time::Duration};
 
 use async_channel::Sender;
+use cache::ConnectionCache;
 use futures::{Stream, TryStreamExt};
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer};
 use waybar_cffi::gtk::glib::{self};
 use zbus::{
-    Connection, MatchRule, MessageStream,
+    Connection, MatchRule, Message, MessageStream,
     fdo::MonitoringProxy,
     names::{InterfaceName, MemberName},
     zvariant::{DeserializeDict, Optional, Type},
@@ -153,26 +154,38 @@ async fn monitor_dbus(tx: Sender<EnrichedNotification>) -> anyhow::Result<()> {
 
     let mut stream = MessageStream::from(conn);
     while let Some(msg) = stream.try_next().await? {
-        if msg.header().interface() == Some(&InterfaceName::from_static_str(INTERFACE)?)
-            && msg.header().member() == Some(&MemberName::from_static_str(METHOD)?)
-        {
-            // Pull the PID out of the connection cache, if we can.
-            //
-            // This isn't always useful: anything in a Flatpak is going to use
-            // the portal's connection, which won't map to a toplevel, but it's
-            // better than nothing.
-            let pid = if let Some(sender) = msg.header().sender() {
-                cache.get(sender).await
-            } else {
-                None
-            };
-
-            tx.send(EnrichedNotification {
-                notification: msg.body().deserialize()?,
-                pid,
-            })
-            .await?;
+        if let Err(e) = process_message(&tx, &cache, &msg).await {
+            tracing::error!(%e, ?msg, "error processing notification message");
         }
+    }
+
+    Ok(())
+}
+
+async fn process_message(
+    tx: &Sender<EnrichedNotification>,
+    cache: &ConnectionCache,
+    msg: &Message,
+) -> anyhow::Result<()> {
+    if msg.header().interface() == Some(&InterfaceName::from_static_str(INTERFACE)?)
+        && msg.header().member() == Some(&MemberName::from_static_str(METHOD)?)
+    {
+        // Pull the PID out of the connection cache, if we can.
+        //
+        // This isn't always useful: anything in a Flatpak is going to use
+        // the portal's connection, which won't map to a toplevel, but it's
+        // better than nothing.
+        let pid = if let Some(sender) = msg.header().sender() {
+            cache.get(sender).await
+        } else {
+            None
+        };
+
+        tx.send(EnrichedNotification {
+            notification: msg.body().deserialize()?,
+            pid,
+        })
+        .await?;
     }
 
     Ok(())
