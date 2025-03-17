@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use niri_ipc::{Action, Output, Reply, Request, socket::Socket};
+use futures::Stream;
+use niri_ipc::{Action, Event, Output, Reply, Request, Workspace, socket::Socket};
 pub use state::{Snapshot, Window};
 pub use window_stream::WindowStream;
 
@@ -36,6 +37,28 @@ impl Niri {
     /// Returns a stream of window snapshots.
     pub fn window_stream(&self) -> WindowStream {
         WindowStream::new()
+    }
+
+    /// Returns a stream of workspace changes.
+    pub fn workspace_stream(&self) -> Result<impl Stream<Item = Vec<Workspace>> + use<>, Error> {
+        let (reply, mut next) = socket()?
+            .send(Request::EventStream)
+            .map_err(Error::NiriIpc)?;
+        reply::typed!(Handled, reply)?;
+
+        Ok(async_stream::stream! {
+            loop {
+                match next() {
+                    Ok(Event::WorkspacesChanged { workspaces }) => {
+                        yield workspaces;
+                    }
+                    Ok(_) => (),
+                    Err(e) => {
+                        tracing::error!(%e, "Niri IPC error reading from event stream");
+                    }
+                }
+            }
+        })
     }
 }
 

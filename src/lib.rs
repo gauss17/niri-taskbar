@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, btree_map::Entry},
-    sync::LazyLock,
+    sync::{Arc, LazyLock, Mutex},
 };
 
 use button::Button;
@@ -101,14 +101,26 @@ impl Instance {
     pub async fn task(&mut self) {
         // We have to build the output filter here, because until the Glib event loop has run the
         // container hasn't been realised, which means we can't figure out which output we're on.
-        let output_filter = self.build_output_filter().await;
+        let output_filter = Arc::new(Mutex::new(self.build_output_filter().await));
 
-        let mut stream = Box::pin(self.state.event_stream());
+        let mut stream = match self.state.event_stream() {
+            Ok(stream) => Box::pin(stream),
+            Err(e) => {
+                tracing::error!(%e, "error starting event stream");
+                return;
+            }
+        };
         while let Some(event) = stream.next().await {
             match event {
                 Event::Notification(notification) => self.process_notification(notification).await,
                 Event::WindowSnapshot(windows) => {
-                    self.process_window_snapshot(windows, &output_filter).await
+                    self.process_window_snapshot(windows, output_filter.clone())
+                        .await
+                }
+                Event::Workspaces(_) => {
+                    // We're just using this as a signal that the outputs may have changed.
+                    let new_filter = self.build_output_filter().await;
+                    *output_filter.lock().expect("output filter lock") = new_filter;
                 }
             }
         }
@@ -313,14 +325,20 @@ impl Instance {
     }
 
     #[tracing::instrument(level = "DEBUG", skip(self))]
-    async fn process_window_snapshot(&mut self, windows: Snapshot, filter: &output::Filter) {
+    async fn process_window_snapshot(
+        &mut self,
+        windows: Snapshot,
+        filter: Arc<Mutex<output::Filter>>,
+    ) {
         // We need to track which, if any, windows are no longer present.
         let mut omitted = self.buttons.keys().copied().collect::<BTreeSet<_>>();
 
-        for window in windows
-            .iter()
-            .filter(|window| filter.should_show(window.output().unwrap_or_default()))
-        {
+        for window in windows.iter().filter(|window| {
+            filter
+                .lock()
+                .expect("output filter lock")
+                .should_show(window.output().unwrap_or_default())
+        }) {
             let button = match self.buttons.entry(window.id) {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {

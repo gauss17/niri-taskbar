@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use async_channel::Sender;
 use futures::{Stream, StreamExt};
+use niri_ipc::Workspace;
 use waybar_cffi::gtk::glib;
 
 use crate::{
     config::Config,
+    error::Error,
     icon,
     niri::{Niri, Snapshot, WindowStream},
     notify::{self, EnrichedNotification},
@@ -40,20 +42,30 @@ impl State {
         &self.0.niri
     }
 
-    pub fn event_stream(&self) -> impl Stream<Item = Event> + use<> {
+    pub fn event_stream(&self) -> Result<impl Stream<Item = Event> + use<>, Error> {
         let (tx, rx) = async_channel::unbounded();
 
         if self.config().notifications_enabled() {
             glib::spawn_future_local(notify_stream(tx.clone()));
         }
 
-        glib::spawn_future_local(window_stream(tx, self.niri().window_stream()));
+        glib::spawn_future_local(window_stream(tx.clone(), self.niri().window_stream()));
 
-        async_stream::stream! {
+        // We don't want to send a set of workspaces through until after the window stream has
+        // yielded a window snapshot, and it's easier to defer it here than in the calling code.
+        let mut delay = Some((tx, self.niri().workspace_stream()?));
+
+        Ok(async_stream::stream! {
             while let Ok(event) = rx.recv().await {
+                if let Some((tx, stream)) = delay.take() {
+                    if let &Event::Workspaces(_) = &event {
+                        glib::spawn_future_local(workspace_stream(tx, stream));
+                    }
+                }
+
                 yield event;
             }
-        }
+        })
     }
 }
 
@@ -67,6 +79,7 @@ struct Inner {
 pub enum Event {
     Notification(EnrichedNotification),
     WindowSnapshot(Snapshot),
+    Workspaces(Vec<Workspace>),
 }
 
 async fn notify_stream(tx: Sender<Event>) {
@@ -83,6 +96,15 @@ async fn window_stream(tx: Sender<Event>, window_stream: WindowStream) {
     while let Some(snapshot) = window_stream.next().await {
         if let Err(e) = tx.send(Event::WindowSnapshot(snapshot)).await {
             tracing::error!(%e, "error sending window snapshot");
+        }
+    }
+}
+
+async fn workspace_stream(tx: Sender<Event>, workspace_stream: impl Stream<Item = Vec<Workspace>>) {
+    let mut workspace_stream = Box::pin(workspace_stream);
+    while let Some(workspaces) = workspace_stream.next().await {
+        if let Err(e) = tx.send(Event::Workspaces(workspaces)).await {
+            tracing::error!(%e, "error sending workspaces");
         }
     }
 }
