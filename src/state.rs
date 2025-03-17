@@ -77,16 +77,16 @@ struct Inner {
 }
 
 pub enum Event {
-    Notification(EnrichedNotification),
+    Notification(Box<EnrichedNotification>),
     WindowSnapshot(Snapshot),
-    Workspaces(Vec<Workspace>),
+    Workspaces(()),
 }
 
 async fn notify_stream(tx: Sender<Event>) {
     let mut stream = Box::pin(notify::stream());
 
     while let Some(notification) = stream.next().await {
-        if let Err(e) = tx.send(Event::Notification(notification)).await {
+        if let Err(e) = tx.send(Event::Notification(Box::new(notification))).await {
             tracing::error!(%e, "error sending notification");
         }
     }
@@ -102,8 +102,8 @@ async fn window_stream(tx: Sender<Event>, window_stream: WindowStream) {
 
 async fn workspace_stream(tx: Sender<Event>, workspace_stream: impl Stream<Item = Vec<Workspace>>) {
     let mut workspace_stream = Box::pin(workspace_stream);
-    while let Some(workspaces) = workspace_stream.next().await {
-        if let Err(e) = tx.send(Event::Workspaces(workspaces)).await {
+    while workspace_stream.next().await.is_some() {
+        if let Err(e) = tx.send(Event::Workspaces(())).await {
             tracing::error!(%e, "error sending workspaces");
         }
     }

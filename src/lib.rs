@@ -158,7 +158,7 @@ impl Instance {
         // What we'll do instead is match up what we can. Niri can tell us everything we want to
         // know about the output, and Gdk 3 does include things like the output geometry, make, and
         // model. So we'll match on those and hope for the best.
-        let niri = self.state.niri().clone();
+        let niri = *self.state.niri();
         let outputs = match gio::spawn_blocking(move || niri.outputs()).await {
             Ok(Ok(outputs)) => outputs,
             Ok(Err(e)) => {
@@ -198,7 +198,7 @@ impl Instance {
         output::Filter::ShowAll
     }
 
-    async fn process_notification(&mut self, notification: EnrichedNotification) {
+    async fn process_notification(&mut self, notification: Box<EnrichedNotification>) {
         // We'll try to set the urgent class on the relevant window if we can
         // figure out which toplevel is associated with the notification.
         //
@@ -282,7 +282,7 @@ impl Instance {
         let mapped = self
             .state
             .config()
-            .notifications_app_map(&desktop_entry)
+            .notifications_app_map(desktop_entry)
             .unwrap_or(desktop_entry);
         let mapped_lower = mapped.to_lowercase();
         let mapped_last_lower = mapped.split('.').last().unwrap_or_default().to_lowercase();

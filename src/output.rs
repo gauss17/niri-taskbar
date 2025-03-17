@@ -103,8 +103,8 @@ impl Geometry {
         Self {
             width: (*width as i32) * scale,
             height: (*height as i32) * scale,
-            x: (*x as i32) * scale,
-            y: (*y as i32) * scale,
+            x: (*x) * scale,
+            y: (*y) * scale,
         }
     }
 }

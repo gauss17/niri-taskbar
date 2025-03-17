@@ -153,9 +153,9 @@ async fn worker(rx: Receiver<Request>, expiry: Duration) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_zbus_message<'a>(
+async fn handle_zbus_message(
     cache: &mut Cache,
-    dbus_proxy: &DBusProxy<'a>,
+    dbus_proxy: &DBusProxy<'_>,
     message: zbus::Message,
 ) {
     if let Some(message) = NameOwnerChanged::from_message(message) {
@@ -174,7 +174,7 @@ async fn handle_zbus_message<'a>(
     }
 }
 
-async fn handle_message<'a>(cache: &mut Cache, dbus_proxy: &DBusProxy<'a>, message: Request) {
+async fn handle_message(cache: &mut Cache, dbus_proxy: &DBusProxy<'_>, message: Request) {
     match message {
         Request::Get { connection, result } => {
             if let Some(maybe_pid) = cache.get(&connection) {

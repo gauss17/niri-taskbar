@@ -50,7 +50,7 @@ impl Process {
 
         let ppid = ppid.parse().map_err(|_| Error::ParentMalformedNumber {
             parent: ppid.to_owned(),
-            pid: pid,
+            pid,
         })?;
 
         Ok(Self {
