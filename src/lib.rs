@@ -198,6 +198,7 @@ impl Instance {
         output::Filter::ShowAll
     }
 
+    #[tracing::instrument(level = "TRACE", skip(self))]
     async fn process_notification(&mut self, notification: Box<EnrichedNotification>) {
         // We'll try to set the urgent class on the relevant window if we can
         // figure out which toplevel is associated with the notification.
@@ -208,6 +209,11 @@ impl Instance {
         };
 
         if let Some(mut pid) = notification.pid() {
+            tracing::trace!(
+                pid,
+                "got notification with PID; trying to match it to a toplevel"
+            );
+
             // If we have the sender PID — either from the notification itself,
             // or D-Bus — then the heuristic we'll use is to walk up from the
             // sender PID and see if any of the parents are toplevels.
@@ -226,6 +232,12 @@ impl Instance {
                     // to do.
                     if !window.is_focused {
                         if let Some(button) = self.buttons.get(&window.id) {
+                            tracing::trace!(
+                                ?button,
+                                ?window,
+                                pid,
+                                "found matching window; setting urgent"
+                            );
                             button.set_urgent();
                             found = true;
                         }
@@ -258,6 +270,8 @@ impl Instance {
             }
         }
 
+        tracing::trace!("no PID in notification, or no match found");
+
         // Otherwise, we'll fall back to the desktop entry if we got one, and
         // see what we can find.
         //
@@ -267,9 +281,11 @@ impl Instance {
         // what the Flatpak actually called them when installed. So we'll do our
         // best and make some educated guesses, but that's really what it is.
         if !self.state.config().notifications_use_desktop_entry() {
+            tracing::trace!("use of desktop entries is disabled; no match found");
             return;
         }
         let Some(desktop_entry) = &notification.notification().hints.desktop_entry else {
+            tracing::trace!("no desktop entry found in notification; nothing more to be done");
             return;
         };
 
@@ -295,6 +311,7 @@ impl Instance {
 
             if app_id == mapped {
                 if let Some(button) = self.buttons.get(&window.id) {
+                    tracing::trace!(app_id, ?button, ?window, "toplevel match found via app ID");
                     button.set_urgent();
                     found = true;
                 }
@@ -304,8 +321,18 @@ impl Instance {
                 // last component of the app ID match the last component of the
                 // desktop entry?".
                 if app_id.to_lowercase() == mapped_lower {
+                    tracing::trace!(
+                        app_id,
+                        ?window,
+                        "toplevel match found via case-transformed app ID"
+                    );
                     fuzzy.push(window.id);
                 } else if app_id.contains('.') {
+                    tracing::trace!(
+                        app_id,
+                        ?window,
+                        "toplevel match found via last element of app ID"
+                    );
                     if let Some(last) = app_id.split('.').last() {
                         if last.to_lowercase() == mapped_last_lower {
                             fuzzy.push(window.id);

@@ -10,7 +10,7 @@ use zbus::{
     Connection, MatchRule, Message, MessageStream,
     fdo::MonitoringProxy,
     names::{InterfaceName, MemberName},
-    zvariant::{DeserializeDict, Optional, Type},
+    zvariant::{self, DeserializeDict, Optional, Type},
 };
 
 mod cache;
@@ -118,19 +118,19 @@ impl<'de> Deserialize<'de> for Actions {
 #[derive(Debug, Clone, DeserializeDict, Type)]
 #[zvariant(rename_all = "kebab-case", signature = "a{sv}")]
 pub struct Hints {
-    pub action_icons: Option<bool>,
-    pub category: Option<String>,
+    // pub action_icons: Option<bool>,
+    // pub category: Option<String>,
     pub desktop_entry: Option<String>,
-    pub resident: Option<bool>,
-    pub sound_file: Option<String>,
-    pub sound_name: Option<String>,
-    pub suppress_sound: Option<bool>,
-    pub transient: Option<bool>,
+    // pub resident: Option<bool>,
+    // pub sound_file: Option<String>,
+    // pub sound_name: Option<String>,
+    // pub suppress_sound: Option<bool>,
+    // pub transient: Option<bool>,
     pub sender_pid: Option<i64>,
-    // This is specified as a BYTE, but in practice seems to always be a u32.
-    pub urgency: Option<u32>,
-    pub x: Option<i32>,
-    pub y: Option<i32>,
+    // This is specified as a BYTE, but in practice is sometimes sent as a u32.
+    // pub urgency: Option<zvariant::OwnedValue>,
+    // pub x: Option<i32>,
+    // pub y: Option<i32>,
 }
 
 static INTERFACE: &str = "org.freedesktop.Notifications";
