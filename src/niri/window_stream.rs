@@ -32,16 +32,13 @@ impl WindowStream {
 }
 
 fn window_stream(tx: Sender<Snapshot>) -> Result<(), Error> {
-    let (reply, mut next) = socket()?
-        .send(Request::EventStream)
-        .map_err(Error::NiriIpc)?;
-    reply::typed!(Handled, reply)?;
+    let mut socket = socket()?;
+    let res = socket.send(Request::EventStream).map_err(Error::NiriIpc)?;
+    reply::typed!(Handled, res)?;
 
-    // XXX: it's not clear to me if there are error conditions that make sense
-    // to handle besides EOF, but it's also not clear that there's actually a
-    // way to detect just that.
     let mut state = WindowSet::new();
-    while let Ok(event) = next() {
+    let mut read_event = socket.read_events();
+    while let Ok(event) = read_event() {
         if let Some(snapshot) = state.with_event(event) {
             tx.send_blocking(snapshot)
                 .map_err(|_| Error::WindowStreamSend)?;

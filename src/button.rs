@@ -1,10 +1,10 @@
 use std::{cell::RefCell, path::PathBuf};
 
 use waybar_cffi::gtk::{
-    self as gtk,
+    self as gtk, Border, CssProvider, IconLookupFlags, IconSize, IconTheme, ReliefStyle,
+    StateFlags,
     gdk_pixbuf::Pixbuf,
     prelude::{ButtonExt, CssProviderExt, GdkPixbufExt, IconThemeExt, StyleContextExt, WidgetExt},
-    Border, CssProvider, IconLookupFlags, IconSize, IconTheme, ReliefStyle, StateFlags,
 };
 
 use crate::state::State;

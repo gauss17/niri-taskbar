@@ -5,13 +5,13 @@ use config::Config;
 use error::Error;
 use state::State;
 use waybar_cffi::{
+    Module,
     gtk::{
-        self,
+        self, Orientation,
         glib::MainContext,
         traits::{BoxExt, ContainerExt, StyleContextExt, WidgetExt},
-        Orientation,
     },
-    waybar_module, Module,
+    waybar_module,
 };
 
 mod button;

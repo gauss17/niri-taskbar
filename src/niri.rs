@@ -1,4 +1,4 @@
-use niri_ipc::{socket::Socket, Action, Reply, Request};
+use niri_ipc::{Action, Reply, Request, socket::Socket};
 use window_stream::WindowStream;
 
 use crate::error::Error;
@@ -33,7 +33,7 @@ impl Niri {
 //
 // This can't be used for event streams, since the stream callback is thrown away in this function.
 fn request(request: Request) -> Result<Reply, Error> {
-    Ok(socket()?.send(request).map_err(Error::NiriIpc)?.0)
+    Ok(socket()?.send(request).map_err(Error::NiriIpc)?)
 }
 
 // Helper to connect to the Niri socket.
