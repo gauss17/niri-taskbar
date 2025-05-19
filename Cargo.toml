@@ -12,11 +12,11 @@ crate-type = ["cdylib"]
 
 [dependencies]
 async-channel = "2.3.1"
-freedesktop-icons = "0.3.1"
+freedesktop-icons = "0.4.0"
 itertools = "0.14.0"
 linicon = "2.3.0"
-niri-ipc = "25.1.0"
+niri-ipc = "25.5.0"
 regex = "1.11.1"
-serde = { version = "1.0.218", features = ["derive"] }
-thiserror = "2.0.11"
-waybar-cffi = "0.1.0"
+serde = { version = "1.0.219", features = ["derive"] }
+thiserror = "2.0.12"
+waybar-cffi = "0.1.1"
