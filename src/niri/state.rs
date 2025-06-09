@@ -1,6 +1,6 @@
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::{cmp::Ordering, collections::BTreeMap, fmt::Display, ops::Deref};
 
-use niri_ipc::{Event, Window, Workspace};
+use niri_ipc::{Event, Window as NiriWindow, Workspace};
 
 /// The toplevel window set within Niri, updated via the Niri event stream.
 #[derive(Debug)]
@@ -13,6 +13,7 @@ impl WindowSet {
     }
 
     /// Updates the window set based on the given [`niri_ipc::Event`].
+    #[tracing::instrument(level = "TRACE", skip(self))]
     pub fn with_event(&mut self, event: Event) -> Option<Snapshot> {
         // This is mildly annoying, because Niri actually has the same state within it and could
         // easily send it on each event, but we have to replicate Niri's own logic and hope we get
@@ -46,21 +47,21 @@ impl WindowSet {
                 if let Some(Inner::Ready(state)) = &mut self.0 {
                     state.remove_window(id);
                 } else {
-                    eprintln!("unexpected state {self:?} for WindowClosed event");
+                    tracing::warn!(%self, "unexpected state for WindowClosed event");
                 }
             }
             Event::WindowOpenedOrChanged { window } => {
                 if let Some(Inner::Ready(state)) = &mut self.0 {
                     state.upsert_window(window);
                 } else {
-                    eprintln!("unexpected state {self:?} for WindowOpenedOrChanged event");
+                    tracing::warn!(%self, "unexpected state for WindowOpenedOrChanged event");
                 }
             }
             Event::WindowFocusChanged { id } => {
                 if let Some(Inner::Ready(state)) = &mut self.0 {
                     state.set_focus(id);
                 } else {
-                    eprintln!("unexpected state {self:?} for WindowFocusChanged event");
+                    tracing::warn!(%self, "unexpected state for WindowFocusChanged event");
                 }
             }
             _ => {}
@@ -74,6 +75,21 @@ impl WindowSet {
     }
 }
 
+impl Display for WindowSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match &self.0 {
+                Some(Inner::Ready(_)) => "ready",
+                Some(Inner::WindowsOnly(_)) => "windows only",
+                Some(Inner::WorkspacesOnly(_)) => "workspaces only",
+                None => "uninitialised",
+            }
+        )
+    }
+}
+
 /// The inner state machine as we establish a new event stream.
 ///
 /// Niri guarantees that we will get [`niri_ipc::Event::WindowsChanged`] and
@@ -82,7 +98,7 @@ impl WindowSet {
 /// the window set.
 #[derive(Debug)]
 enum Inner {
-    WindowsOnly(Vec<Window>),
+    WindowsOnly(Vec<NiriWindow>),
     WorkspacesOnly(Vec<Workspace>),
     Ready(Niri),
 }
@@ -90,12 +106,12 @@ enum Inner {
 /// The Niri state, as best as we can reconstruct it based on the event stream.
 #[derive(Debug)]
 struct Niri {
-    windows: BTreeMap<u64, Window>,
+    windows: BTreeMap<u64, NiriWindow>,
     workspaces: BTreeMap<u64, Workspace>,
 }
 
 impl Niri {
-    fn new(windows: Vec<Window>, workspaces: Vec<Workspace>) -> Self {
+    fn new(windows: Vec<NiriWindow>, workspaces: Vec<Workspace>) -> Self {
         let mut niri = Niri {
             windows: Default::default(),
             workspaces: Default::default(),
@@ -111,7 +127,7 @@ impl Niri {
         self.windows.remove(&id);
     }
 
-    fn replace_windows(&mut self, windows: Vec<Window>) {
+    fn replace_windows(&mut self, windows: Vec<NiriWindow>) {
         self.windows = windows
             .into_iter()
             .map(|window| (window.id, window))
@@ -129,7 +145,7 @@ impl Niri {
         }
     }
 
-    fn upsert_window(&mut self, window: Window) {
+    fn upsert_window(&mut self, window: NiriWindow) {
         // Ensure that we update other windows if the new window is focused.
         if window.is_focused {
             self.windows.values_mut().for_each(|window| {
@@ -143,7 +159,7 @@ impl Niri {
     /// Create a snapshot of the current window state, ordered by workspace index.
     fn snapshot(&self) -> Snapshot {
         struct WindowWorkspace<'a> {
-            window: &'a Window,
+            window: &'a NiriWindow,
             workspace: &'a Workspace,
         }
 
@@ -166,9 +182,34 @@ impl Niri {
             order => order,
         });
 
-        wws.into_iter().map(|ww| ww.window.clone()).collect()
+        wws.into_iter()
+            .map(|ww| Window {
+                window: ww.window.clone(),
+                output: ww.workspace.output.clone(),
+            })
+            .collect()
     }
 }
 
 /// A snapshot of current toplevel windows, ordered by workspace index.
 pub type Snapshot = Vec<Window>;
+
+#[derive(Debug, Clone)]
+pub struct Window {
+    window: NiriWindow,
+    output: Option<String>,
+}
+
+impl Window {
+    pub fn output(&self) -> Option<&str> {
+        self.output.as_deref()
+    }
+}
+
+impl Deref for Window {
+    type Target = NiriWindow;
+
+    fn deref(&self) -> &Self::Target {
+        &self.window
+    }
+}
