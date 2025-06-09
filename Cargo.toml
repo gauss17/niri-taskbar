@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 async-channel = "2.3.1"
-freedesktop-icons = "0.3.1"
+freedesktop-icons = "0.4.0"
 itertools = "0.14.0"
 linicon = "2.3.0"
 niri-ipc = "25.1.0"
