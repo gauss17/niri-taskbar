@@ -40,11 +40,11 @@ practice will look something like this:
 
 ```jsonc
 {
-  "modules-left": ["cffi/niri-taskbar"],
+  "modules_left": ["cffi/niri-taskbar"],
   // ...
   "cffi/niri-taskbar": {
-    "module-path": "/your/path/to/libniri_taskbar.so",
-  },
+    "module_path": "/your/path/to/libniri_taskbar.so",
+  }
 }
 ```
 
@@ -61,7 +61,7 @@ so:
 ```jsonc
 {
   "cffi/niri-taskbar": {
-    // module-path
+    // module_path
     "apps": {
       "signal": [
         {
