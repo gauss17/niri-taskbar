@@ -15,7 +15,8 @@ distro, let me know and I'll update the README.)
 
 ### Requirements
 
-- Rust 1.85.0 or later
+- Rust 1.87.0 or later
+- Niri 25.05
 - Gtk+ 3 (including the development package on distros that separate those out)
 - Waybar 0.12.0 (or any version that's API compatible with 0.12, which will
   _probably_ include later versions, but I have no actual knowledge there)
