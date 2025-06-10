@@ -949,7 +949,7 @@ dependencies = [
 
 [[package]]
 name = "niri-taskbar"
-version = "0.1.0"
+version = "0.2.0+niri.25.05"
 dependencies = [
  "anyhow",
  "async-channel",
