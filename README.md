@@ -50,7 +50,7 @@ practice will look something like this:
 
 ### Application highlighting
 
-Since Niri doesn't currently support urgency notifications, you can highlight
+In addition to [notification support](#notifications), you can highlight
 applications based on their app ID and title by configuring application rules in
 the Waybar configuration.
 
@@ -84,6 +84,25 @@ added.
 
 The easiest way to get the app ID for a window is to ask Niri with `niri msg
 windows`. Note that app IDs are case sensitive.
+
+### Multiple outputs
+
+By default, the taskbar will only show applications running on the same output
+as the taskbar itself. You can enable the `show_all_outputs` option to show all
+applications on all outputs:
+
+```jsonc
+{
+  "cffi/niri-taskbar": {
+    // other settings
+    "show_all_outputs": true
+  }
+}
+```
+
+Note that multiple output support is currently experimental, and may have some
+quirks. Please open an issue with your use case if it's not working as you
+expect!
 
 ### Notifications
 
