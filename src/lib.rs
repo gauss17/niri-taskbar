@@ -1,5 +1,6 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, btree_map::Entry},
+    cmp::Ordering,
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::{Arc, LazyLock, Mutex},
 };
 
@@ -7,7 +8,9 @@ use button::Button;
 use config::Config;
 use error::Error;
 use futures::StreamExt;
+use itertools::Itertools;
 use niri::{Snapshot, Window};
+use niri_ipc::Workspace;
 use notify::EnrichedNotification;
 use output::Matcher;
 use process::Process;
@@ -18,7 +21,7 @@ use waybar_cffi::{
     gtk::{
         self, Orientation, gio,
         glib::MainContext,
-        traits::{BoxExt, ContainerExt, StyleContextExt, WidgetExt},
+        traits::{BoxExt, ContainerExt, LabelExt, StyleContextExt, WidgetExt},
     },
     waybar_module,
 };
@@ -88,8 +91,16 @@ async fn init(info: &waybar_cffi::InitInfo, state: State) -> Result<(), Error> {
     Ok(())
 }
 
+#[derive(Debug)]
+struct WorkspaceDisplay {
+    state: Workspace,
+    container: gtk::Box,
+    label: gtk::Label,
+    buttons: BTreeMap<u64, Button>, // Key: widnow id
+}
+
 struct Instance {
-    buttons: BTreeMap<u64, Button>,
+    workspaces: BTreeMap<u64, WorkspaceDisplay>, // Key: workspace id
     container: gtk::Box,
     last_snapshot: Option<Snapshot>,
     state: State,
@@ -98,7 +109,7 @@ struct Instance {
 impl Instance {
     pub fn new(state: State, container: gtk::Box) -> Self {
         Self {
-            buttons: Default::default(),
+            workspaces: Default::default(),
             container,
             last_snapshot: None,
             state,
@@ -121,13 +132,11 @@ impl Instance {
             match event {
                 Event::Notification(notification) => self.process_notification(notification).await,
                 Event::WindowSnapshot(windows) => {
+                    self.process_workspace_update(&windows.workspaces, output_filter.clone())
+                        .await;
                     self.process_window_snapshot(windows, output_filter.clone())
-                        .await
-                }
-                Event::Workspaces(_) => {
-                    // We're just using this as a signal that the outputs may have changed.
-                    let new_filter = self.build_output_filter().await;
-                    *output_filter.lock().expect("output filter lock") = new_filter;
+                        .await;
+                    self.container.show_all();
                 }
             }
         }
@@ -227,7 +236,7 @@ impl Instance {
             //
             // The easiest way to do that is with a map, which we can build from
             // the toplevels.
-            let pids = PidWindowMap::new(toplevels.iter());
+            let pids = PidWindowMap::new(toplevels.windows.iter());
 
             // We'll track if we found anything, since we might fall back to
             // some fuzzy matching.
@@ -238,7 +247,11 @@ impl Instance {
                     // If the window is already focused, there isn't really much
                     // to do.
                     if !window.is_focused {
-                        if let Some(button) = self.buttons.get(&window.id) {
+                        if let Some(button) = self
+                            .workspaces
+                            .values_mut()
+                            .find_map(|workspace| workspace.buttons.get(&window.id))
+                        {
                             tracing::trace!(
                                 ?button,
                                 ?window,
@@ -315,13 +328,17 @@ impl Instance {
             .to_lowercase();
 
         let mut found = false;
-        for window in toplevels.iter() {
+        for window in toplevels.windows.iter() {
             let Some(app_id) = window.app_id.as_deref() else {
                 continue;
             };
 
             if app_id == mapped {
-                if let Some(button) = self.buttons.get(&window.id) {
+                if let Some(button) = self
+                    .workspaces
+                    .values()
+                    .find_map(|workspace| workspace.buttons.get(&window.id))
+                {
                     tracing::trace!(app_id, ?button, ?window, "toplevel match found via app ID");
                     button.set_urgent();
                     found = true;
@@ -355,7 +372,11 @@ impl Instance {
 
         if !found {
             for id in fuzzy.into_iter() {
-                if let Some(button) = self.buttons.get(&id) {
+                if let Some(button) = self
+                    .workspaces
+                    .values()
+                    .find_map(|workspace| workspace.buttons.get(&id))
+                {
                     button.set_urgent();
                 }
             }
@@ -363,57 +384,156 @@ impl Instance {
     }
 
     #[tracing::instrument(level = "DEBUG", skip(self))]
-    async fn process_window_snapshot(
+    async fn process_workspace_update(
         &mut self,
-        windows: Snapshot,
+        workspaces: &Vec<Workspace>,
         filter: Arc<Mutex<output::Filter>>,
     ) {
-        // We need to track which, if any, windows are no longer present.
-        let mut omitted = self.buttons.keys().copied().collect::<BTreeSet<_>>();
+        let filter_value = filter.lock().unwrap();
+        let workspaces: Vec<_> = workspaces
+            .iter()
+            .filter(|wsp| filter_value.should_show(&wsp.output.clone().unwrap_or_default()))
+            .collect();
+        drop(filter_value);
 
-        for window in windows.iter().filter(|window| {
-            filter
-                .lock()
-                .expect("output filter lock")
-                .should_show(window.output().unwrap_or_default())
-        }) {
-            let button = match self.buttons.entry(window.id) {
-                Entry::Occupied(entry) => entry.into_mut(),
-                Entry::Vacant(entry) => {
-                    let button = Button::new(&self.state, window);
+        let mut known_workspace = BTreeSet::new();
 
-                    // Implicitly adding the button widget to the box as we create it simplifies
-                    // reordering, since it means we can just do it as we go.
-                    self.container.add(button.widget());
-                    entry.insert(button)
+        // now somehow update/create the
+        for workspace in workspaces {
+            known_workspace.insert(workspace.id);
+            let entry = self.workspaces.entry(workspace.id).or_insert_with(|| {
+                let container = gtk::Box::new(
+                    match self.state.config().orientation() {
+                        config::Orientation::Vertical => Orientation::Vertical,
+                        config::Orientation::Horizontal => Orientation::Horizontal,
+                    },
+                    0,
+                );
+                self.container.add(&container);
+                let label = gtk::Label::new(None);
+                WorkspaceDisplay {
+                    state: workspace.clone(),
+                    container,
+                    label,
+                    buttons: BTreeMap::new(),
                 }
-            };
+            });
 
-            // Update the window properties.
-            button.set_focus(window.is_focused);
-            button.set_title(window.title.as_deref());
-
-            // Ensure we don't remove this button from the container.
-            omitted.remove(&window.id);
-
-            // Since we get the windows in order in the snapshot, we can just
-            // push this to the back and then let other widgets push in front as
-            // we iterate.
-            self.container.reorder_child(button.widget(), -1);
+            entry.state = workspace.clone();
         }
 
-        // Remove any windows that no longer exist.
-        for id in omitted.into_iter() {
-            if let Some(button) = self.buttons.remove(&id) {
-                self.container.remove(button.widget());
+        self.workspaces.retain(|workspace_id, workspace| {
+            if !known_workspace.contains(&(*workspace_id as u64)) {
+                self.container.remove(&workspace.container);
+                return false;
+            }
+            true
+        });
+
+        //reorder in parent
+        self.workspaces
+            .iter()
+            .sorted_unstable_by(|(_, wsp1), (_, wsp2)| wsp1.state.idx.cmp(&wsp2.state.idx))
+            .for_each(|(_, workspace)| {
+                let context = workspace.container.style_context();
+                if workspace.state.is_focused {
+                    context.remove_class("niri-workspace");
+                    context.add_class("niri-workspace-focused");
+
+                    workspace
+                        .label
+                        .set_text(&self.state.config().workspace_format_focused());
+                } else {
+                    context.add_class("niri-workspace");
+                    context.remove_class("niri-workspace-focused");
+
+                    workspace
+                        .label
+                        .set_text(&self.state.config().workspace_format());
+                }
+                self.container.reorder_child(&workspace.container, -1);
+            });
+    }
+
+    #[tracing::instrument(level = "DEBUG", skip(self))]
+    async fn process_window_snapshot(
+        &mut self,
+        snapshot: Snapshot,
+        filter: Arc<Mutex<output::Filter>>,
+    ) {
+        // Get the filter for showing windows
+        let filter_value = filter.lock().expect("output filter lock").clone();
+
+        // Filter windows based on output
+        let filtered_windows: Vec<_> = snapshot
+            .windows
+            .iter()
+            .filter(|window| filter_value.should_show(window.output().unwrap_or_default()))
+            .collect();
+
+        // Add new windows
+        let mut known_windows = BTreeSet::new();
+        let mut focused_workspace_id = None;
+        for window in filtered_windows {
+            known_windows.insert((window.workspace_id.unwrap_or(0), window.id));
+            self.workspaces
+                .entry(window.workspace_id.unwrap_or(0))
+                .and_modify(|wsp| {
+                    let button = wsp.buttons.entry(window.id).or_insert_with(|| {
+                        let button = Button::new(&self.state, &window);
+                        wsp.container.add(button.widget());
+                        button
+                    });
+                    // Update the window properties.
+                    button.set_focus(window.is_focused);
+                    button.set_title(window.title.as_deref());
+                    button.set_layout(window.layout.clone());
+                    if window.is_focused {
+                        focused_workspace_id = window.workspace_id;
+                    }
+                });
+        }
+
+        for (workspace_id, workspace) in &mut self.workspaces {
+            // Remove unknown windows
+            workspace.buttons.retain(|window_id, button| {
+                if !known_windows.contains(&(*workspace_id, *window_id)) {
+                    workspace.container.remove(button.widget());
+                    return false;
+                }
+                true
+            });
+
+            // Order windows based on layout
+            workspace
+                .buttons
+                .iter()
+                .sorted_unstable_by(|(_, button1), (_, button2)| {
+                    match (button1.pos(), button2.pos()) {
+                        (Some((row1, col1)), Some((row2, col2))) => match row1.cmp(row2) {
+                            Ordering::Equal => col1.cmp(col2),
+                            ord => ord,
+                        },
+                        (Some(_), None) => Ordering::Less,
+                        (None, Some(_)) => Ordering::Greater,
+                        (None, None) => Ordering::Equal,
+                    }
+                })
+                .for_each(|(_, button)| {
+                    workspace.container.reorder_child(button.widget(), -1);
+                });
+
+            // hide empty workspaces, unless focused
+            if !workspace.state.is_focused && workspace.buttons.is_empty() {
+                workspace.container.remove(&workspace.label);
+            } else {
+                if workspace.label.parent().is_none() {
+                    workspace.container.add(&workspace.label);
+                }
             }
         }
 
-        // Ensure everything is rendered.
-        self.container.show_all();
-
-        // Update the last snapshot.
-        self.last_snapshot = Some(windows);
+        self.last_snapshot = Some(snapshot);
     }
 }
 

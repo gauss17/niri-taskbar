@@ -71,6 +71,13 @@ impl WindowSet {
                     }
                 }
             }
+            Event::WorkspaceActivated { id, focused } => {
+                if let Some(Inner::Ready(state)) = &mut self.0 {
+                    for (_, workspace) in &mut state.workspaces {
+                        workspace.is_focused = focused && id == workspace.id;
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -153,11 +160,9 @@ impl Niri {
     }
 
     fn update_window_layout(&mut self, window_id: u64, layout: WindowLayout) {
-        if let Some(window) = self.windows.get_mut(&window_id) {
+        self.windows.entry(window_id).and_modify(|window| {
             window.layout = layout;
-        } else {
-            tracing::warn!(window_id, ?layout, "got window layout for unknown window");
-        }
+        });
     }
 
     fn upsert_window(&mut self, window: NiriWindow) {
@@ -173,50 +178,37 @@ impl Niri {
 
     /// Create a snapshot of the current window state, ordered by workspace index.
     fn snapshot(&self) -> Snapshot {
-        struct WindowWorkspace<'a> {
-            window: &'a NiriWindow,
-            workspace: &'a Workspace,
-        }
-
-        let mut wws: Vec<_> = self
+        let windows: Vec<_> = self
             .windows
             .values()
             .filter_map(|window| {
-                if let Some(ws_id) = window.workspace_id {
-                    if let Some(workspace) = self.workspaces.get(&ws_id) {
-                        return Some(WindowWorkspace { window, workspace });
-                    }
+                if let Some(ws_id) = window.workspace_id
+                    && let Some(workspace) = self.workspaces.get(&ws_id)
+                {
+                    return Some(Window {
+                        window: window.clone(),
+                        output: workspace.output.clone(),
+                    });
                 }
                 None
             })
             .collect();
-        wws.sort_by(|a, b| {
-            // Compare by workspace ID first, then window position, then window ID as a last
-            // fallback.
-            a.workspace
-                .idx
-                .cmp(&b.workspace.idx)
-                .then_with(|| {
-                    let a_pos = a.window.layout.pos_in_scrolling_layout.unwrap_or_default();
-                    let b_pos = b.window.layout.pos_in_scrolling_layout.unwrap_or_default();
 
-                    // Compare by column index, then tile index within the column.
-                    a_pos.0.cmp(&b_pos.0).then_with(|| a_pos.1.cmp(&b_pos.1))
-                })
-                .then_with(|| a.window.id.cmp(&b.window.id))
-        });
+        let workspaces = self.workspaces.iter().map(|val| val.1.clone()).collect();
 
-        wws.into_iter()
-            .map(|ww| Window {
-                window: ww.window.clone(),
-                output: ww.workspace.output.clone(),
-            })
-            .collect()
+        Snapshot {
+            windows,
+            workspaces,
+        }
     }
 }
 
 /// A snapshot of current toplevel windows, ordered by workspace index.
-pub type Snapshot = Vec<Window>;
+#[derive(Debug)]
+pub struct Snapshot {
+    pub windows: Vec<Window>,
+    pub workspaces: Vec<Workspace>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Window {

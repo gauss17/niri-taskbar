@@ -15,6 +15,7 @@ pub struct Button {
     app_id: Option<String>,
     button: gtk::Button,
     state: State,
+    layout: niri_ipc::WindowLayout,
 }
 
 impl Debug for Button {
@@ -74,6 +75,7 @@ impl Button {
             app_id,
             button,
             state,
+            layout: window.layout.clone(),
         };
 
         // Set up our event handlers. It's easier to do this with self already available.
@@ -126,6 +128,10 @@ impl Button {
     #[tracing::instrument(level = "TRACE")]
     pub fn set_urgent(&self) {
         self.button.style_context().add_class("urgent");
+    }
+
+    pub fn set_layout(&mut self, layout: niri_ipc::WindowLayout) {
+        self.layout = layout
     }
 
     /// Returns the actual [`gtk::Button`] widget.
@@ -274,6 +280,10 @@ impl Button {
             )
             .and_then(|pixbuf| pixbuf.create_surface(0, button.window().as_ref()))
             .map(|surface| gtk::Image::from_surface(Some(&surface)))
+    }
+
+    pub fn pos(&self) -> &Option<(usize, usize)> {
+        &self.layout.pos_in_scrolling_layout
     }
 }
 

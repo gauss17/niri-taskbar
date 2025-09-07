@@ -15,6 +15,10 @@ pub struct Config {
     show_all_outputs: bool,
     #[serde(default)]
     orientation: Orientation,
+    #[serde(default)]
+    workspace_format: String,
+    #[serde(default)]
+    workspace_format_focused: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,6 +122,14 @@ impl Config {
 
     pub fn orientation(&self) -> Orientation {
         self.orientation
+    }
+
+    pub fn workspace_format(&self) -> &str {
+        &self.workspace_format
+    }
+
+    pub fn workspace_format_focused(&self) -> &str {
+        &self.workspace_format_focused
     }
 }
 
