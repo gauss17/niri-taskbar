@@ -1,10 +1,10 @@
 # Niri Taskbar (for Waybar)
 
-This provides a [Waybar][waybar] taskbar for [Niri][niri].
+This provides a combined [Waybar][waybar] taskbar + workspace indicator for [Niri][niri].
 
-The main shift from the builtin `wlr/taskbar` module is that windows are always
-ordered by workspace index, then window ID (which essentially means that the
-windows are ordered by creation time, at least as of Waybar 0.12.0).
+Displays ordered list of workspaces, each with a list of its windwows ordered by
+workspace position (floating windows last). Current workspace and focused window
+are highlighted.
 
 ![Example screenshot](images/screenshot.png)
 
@@ -16,7 +16,7 @@ distro, let me know and I'll update the README.)
 ### Requirements
 
 - Rust 1.87.0 or later
-- Niri 25.05
+- Niri 25.08
 - Gtk+ 3 (including the development package on distros that separate those out)
 - Waybar 0.12.0 (or any version that's API compatible with 0.12, which will
   _probably_ include later versions, but I have no actual knowledge there)
@@ -44,6 +44,9 @@ practice will look something like this:
   // ...
   "cffi/niri-taskbar": {
     "module_path": "/your/path/to/libniri_taskbar.so",
+    "orientation": "vertical",
+    "workspace_format": "󱋰󱋰",
+    "workspace_format_focused": "󱋰󱋰"
   }
 }
 ```
@@ -127,9 +130,12 @@ included, but can be overridden [as described below](#styling).
 ## Styling
 
 The taskbar uses [the same Gtk styling mechanism as Waybar][style]. The top
-level taskbar element is given the class `.niri-taskbar`, and contains `button`
-elements within it. The only CSS class that is applied by default is the
-`focused` class, which is added to the button for the currently focused window.
+level taskbar element is given the class `.niri-taskbar`, and contains box
+containers of class `.niri-workspace` for each workspaces (the current one
+gets class `.niri-workspace_focused`).
+Inside each workspace container are `button` elements for each window. The
+only CSS class that is applied by default is the `focused` class, which is
+added to the button for the currently focused window.
 
 The default styling assumes a dark background. It provides a basic hover
 effect, and highlights the focused window.
@@ -143,6 +149,20 @@ For a light background, something like this is likely good:
 
 .niri-taskbar button.focused {
   background: rgba(0, 0, 0, 0.3);
+}
+```
+
+For workspace highlight, something like this:
+
+```css
+.niri-workspace {
+  border: 2px solid transparent;
+  background: transparent;
+}
+
+.niri-workspace-focused {
+  border: 2px solid rgba(255, 0, 255, 0.2);
+  background: rgba(255, 0, 255, 0.1);
 }
 ```
 
