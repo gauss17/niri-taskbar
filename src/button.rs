@@ -4,6 +4,7 @@ use waybar_cffi::gtk::{
     self as gtk, Border, CssProvider, IconLookupFlags, IconSize, IconTheme, ReliefStyle,
     StateFlags,
     gdk_pixbuf::Pixbuf,
+    glib::Propagation,
     prelude::{ButtonExt, CssProviderExt, GdkPixbufExt, IconThemeExt, StyleContextExt, WidgetExt},
 };
 
@@ -135,11 +136,24 @@ impl Button {
     fn connect_click_handler(&self, window_id: u64) {
         let state = self.state.clone();
 
-        self.button.connect_clicked(move |_| {
-            if let Err(e) = state.niri().activate_window(window_id) {
-                tracing::warn!(%e, id = window_id, "error trying to activate window");
-            }
-        });
+        self.button
+            .connect_button_press_event(move |_, event| match event.button() {
+                // Left mouse button
+                1 => {
+                    if let Err(e) = state.niri().activate_window(window_id) {
+                        tracing::warn!(%e, id = window_id, "error trying to activate window");
+                    }
+                    Propagation::Stop
+                }
+                // Middle mouse button
+                2 => {
+                    if let Err(e) = state.niri().close_window(window_id) {
+                        tracing::warn!(%e, id = window_id, "error trying to close window");
+                    }
+                    Propagation::Stop
+                }
+                _ => Propagation::Proceed,
+            });
     }
 
     #[tracing::instrument(level = "TRACE")]
