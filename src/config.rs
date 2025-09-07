@@ -13,6 +13,8 @@ pub struct Config {
     notifications: Notifications,
     #[serde(default)]
     show_all_outputs: bool,
+    #[serde(default)]
+    orientation: Orientation,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +42,20 @@ impl Default for Notifications {
 
 fn default_true() -> bool {
     true
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+pub enum Orientation {
+    #[serde(rename = "vertical")]
+    Vertical,
+    #[serde(rename = "horizontal")]
+    Horizontal,
+}
+
+impl Default for Orientation {
+    fn default() -> Self {
+        Orientation::Horizontal
+    }
 }
 
 impl Config {
@@ -98,6 +114,10 @@ impl Config {
 
     pub fn show_all_outputs(&self) -> bool {
         self.show_all_outputs
+    }
+
+    pub fn orientation(&self) -> Orientation {
+        self.orientation
     }
 }
 
