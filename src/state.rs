@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use async_channel::Sender;
 use futures::{Stream, StreamExt};
-use tracing::debug;
 use waybar_cffi::gtk::glib;
 
 use crate::{
@@ -95,7 +94,6 @@ async fn window_stream(tx: Sender<Event>, window_stream: WindowStream) {
                     tracing::error!(%e, "error sending floating closed event");
                 }
             }
-            _ => {}
         }
     }
 }

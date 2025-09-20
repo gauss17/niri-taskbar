@@ -132,6 +132,7 @@ impl Instance {
             match event {
                 Event::Notification(notification) => self.process_notification(notification).await,
                 Event::WindowSnapshot(windows) => {
+                    self.update_window_placement(&windows);
                     self.process_workspace_update(&windows.workspaces, output_filter.clone())
                         .await;
                     self.process_window_snapshot(windows, output_filter.clone())
@@ -539,6 +540,37 @@ impl Instance {
         }
 
         self.last_snapshot = Some(snapshot);
+    }
+
+    // Auto-move floating windows to focused workspace
+    fn update_window_placement(&self, windows: &Snapshot) {
+        // Get focused wordspace for each output
+        let mut focused_ws_id = HashMap::new();
+        for workspace in &windows.workspaces {
+            if workspace.is_focused {
+                if let Some(output) = &workspace.output {
+                    focused_ws_id.insert(output.clone(), workspace.id);
+                }
+                break;
+            }
+        }
+
+        // Move windows to active workspace on its output
+        for window in &windows.windows {
+            if self.state.config().keep_on_active_workspace().matches(
+                window.app_id.as_ref().unwrap_or(&"".to_owned()),
+                window.title.as_ref().unwrap_or(&"".to_owned()),
+                window.is_floating,
+            ) && let Some(window_output) = window.output()
+                && let Some(focused_ws_id) = focused_ws_id.get(window_output)
+                && window.workspace_id != Some(*focused_ws_id)
+            {
+                let _ = self
+                    .state
+                    .niri()
+                    .move_window_to_workspace(window.id, *focused_ws_id);
+            }
+        }
     }
 }
 

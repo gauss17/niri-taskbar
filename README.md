@@ -2,11 +2,11 @@
 
 This provides a combined [Waybar][waybar] taskbar + workspace indicator for [Niri][niri].
 
-Displays ordered list of workspaces, each with a list of its windwows ordered by
+Displays ordered list of workspaces, each with a list of its windows ordered by
 workspace position (floating windows last). Current workspace and focused window
 are highlighted.
 
-Also implementa a few waybar unrelated niri extensions. E.g. option to automatically
+Also implements a few waybar unrelated niri extensions. E.g. option to automatically
 switch to tiling layer when closing a (floating) window.
 
 ![Example screenshot](images/screenshot.png)
@@ -54,7 +54,19 @@ it will look something like this:
     // Workspace separator for focussed owrkspaces
     "workspace_format_focused": "󱋰󱋰",
     // Return to tiling layer when closing a (floating) window
-    "close_to_tiling": false
+    "close_to_tiling": false,
+    // Keep matching windows on active workspace
+    "keep_on_active_workspace": {
+      // Match all floating windows
+      "floating": false,
+      // Match by app id and title
+      "apps": [
+        {
+          "id": "librewolf",
+          "title": "Picture-in-Picture"
+        }
+      ]
+    }
   }
 }
 ```

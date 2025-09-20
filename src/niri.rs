@@ -48,6 +48,19 @@ impl Niri {
         let reply = request(Request::Action(Action::FocusTiling {}))?;
         reply::typed!(Outputs, reply)
     }
+
+    pub fn move_window_to_workspace(
+        &self,
+        window_id: u64,
+        workspace_id: u64,
+    ) -> Result<HashMap<String, Output>, Error> {
+        let reply = request(Request::Action(Action::MoveWindowToWorkspace {
+            window_id: Some(window_id),
+            reference: niri_ipc::WorkspaceReferenceArg::Id(workspace_id),
+            focus: false,
+        }))?;
+        reply::typed!(Outputs, reply)
+    }
 }
 
 // Helper to marshal request errors into our own type system.

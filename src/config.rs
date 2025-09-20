@@ -21,6 +21,52 @@ pub struct Config {
     workspace_format_focused: String,
     #[serde(default)]
     close_to_tiling: bool,
+    #[serde(default)]
+    keep_on_active_workspace: KeepOnActiveWorkspace,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct KeepOnActiveWorkspace {
+    floating: bool,
+    apps: Vec<AppId>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AppId {
+    id: Option<String>,
+    title: Option<String>,
+}
+
+impl Default for KeepOnActiveWorkspace {
+    fn default() -> Self {
+        KeepOnActiveWorkspace {
+            floating: false,
+            apps: vec![],
+        }
+    }
+}
+
+impl KeepOnActiveWorkspace {
+    pub fn matches(&self, id: &str, title: &str, floating: bool) -> bool {
+        if self.floating && floating {
+            return true;
+        }
+        self.apps.iter().any(|app_id| app_id.matches(id, title))
+    }
+}
+
+impl AppId {
+    pub fn matches(&self, id: &str, title: &str) -> bool {
+        self.id
+            .as_ref()
+            .map(|self_id| self_id == id)
+            .unwrap_or(true)
+            && self
+                .title
+                .as_ref()
+                .map(|self_title| self_title.contains(title))
+                .unwrap_or(true)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -136,6 +182,10 @@ impl Config {
 
     pub fn close_to_tiling(&self) -> bool {
         self.close_to_tiling
+    }
+
+    pub fn keep_on_active_workspace(&self) -> &KeepOnActiveWorkspace {
+        &self.keep_on_active_workspace
     }
 }
 
