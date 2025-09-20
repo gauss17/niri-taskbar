@@ -14,7 +14,8 @@ impl WindowSet {
 
     /// Updates the window set based on the given [`niri_ipc::Event`].
     #[tracing::instrument(level = "TRACE", skip(self))]
-    pub fn with_event(&mut self, event: Event) -> Option<Snapshot> {
+    pub fn with_event(&mut self, event: Event) -> Vec<LayoutEvent> {
+        let mut events = vec![];
         // This is mildly annoying, because Niri actually has the same state within it and could
         // easily send it on each event, but we have to replicate Niri's own logic and hope we get
         // it right.
@@ -45,7 +46,7 @@ impl WindowSet {
             },
             Event::WindowClosed { id } => {
                 if let Some(Inner::Ready(state)) = &mut self.0 {
-                    state.remove_window(id);
+                    events.append(&mut state.remove_window(id));
                 } else {
                     tracing::warn!(%self, "unexpected state for WindowClosed event");
                 }
@@ -82,10 +83,10 @@ impl WindowSet {
         }
 
         if let Some(Inner::Ready(state)) = &self.0 {
-            Some(state.snapshot())
-        } else {
-            None
+            events.push(LayoutEvent::Change(state.snapshot()));
         }
+
+        events
     }
 }
 
@@ -137,8 +138,13 @@ impl Niri {
         niri
     }
 
-    fn remove_window(&mut self, id: u64) {
-        self.windows.remove(&id);
+    fn remove_window(&mut self, id: u64) -> Vec<LayoutEvent> {
+        if let Some(window) = self.windows.remove(&id) {
+            if window.is_floating {
+                return vec![LayoutEvent::FloatingClosed];
+            }
+        }
+        vec![]
     }
 
     fn replace_windows(&mut self, windows: Vec<NiriWindow>) {
@@ -201,6 +207,11 @@ impl Niri {
             workspaces,
         }
     }
+}
+
+pub enum LayoutEvent {
+    Change(Snapshot),
+    FloatingClosed,
 }
 
 /// A snapshot of current toplevel windows, ordered by workspace index.

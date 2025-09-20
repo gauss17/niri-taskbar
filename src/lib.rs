@@ -138,6 +138,11 @@ impl Instance {
                         .await;
                     self.container.show_all();
                 }
+                Event::FloatingClosed => {
+                    if self.state.config().close_to_tiling() {
+                        let _ = self.state.niri().focus_tiling();
+                    }
+                }
             }
         }
     }

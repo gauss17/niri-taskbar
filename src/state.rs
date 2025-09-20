@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use async_channel::Sender;
 use futures::{Stream, StreamExt};
+use tracing::debug;
 use waybar_cffi::gtk::glib;
 
 use crate::{
     config::Config,
     error::Error,
     icon,
-    niri::{Niri, Snapshot, WindowStream},
+    niri::{LayoutEvent, Niri, Snapshot, WindowStream},
     notify::{self, EnrichedNotification},
 };
 
@@ -68,6 +69,7 @@ struct Inner {
 pub enum Event {
     Notification(Box<EnrichedNotification>),
     WindowSnapshot(Snapshot),
+    FloatingClosed,
 }
 
 async fn notify_stream(tx: Sender<Event>) {
@@ -81,9 +83,19 @@ async fn notify_stream(tx: Sender<Event>) {
 }
 
 async fn window_stream(tx: Sender<Event>, window_stream: WindowStream) {
-    while let Some(snapshot) = window_stream.next().await {
-        if let Err(e) = tx.send(Event::WindowSnapshot(snapshot)).await {
-            tracing::error!(%e, "error sending window snapshot");
+    while let Some(layout_event) = window_stream.next().await {
+        match layout_event {
+            LayoutEvent::Change(snapshot) => {
+                if let Err(e) = tx.send(Event::WindowSnapshot(snapshot)).await {
+                    tracing::error!(%e, "error sending window snapshot");
+                }
+            }
+            LayoutEvent::FloatingClosed => {
+                if let Err(e) = tx.send(Event::FloatingClosed).await {
+                    tracing::error!(%e, "error sending floating closed event");
+                }
+            }
+            _ => {}
         }
     }
 }

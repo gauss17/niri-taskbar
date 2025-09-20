@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use niri_ipc::{Action, Output, Reply, Request, socket::Socket};
-pub use state::{Snapshot, Window};
+pub use state::{LayoutEvent, Snapshot, Window};
 pub use window_stream::WindowStream;
 
 use crate::error::Error;
@@ -42,6 +42,11 @@ impl Niri {
     /// Returns a stream of window snapshots.
     pub fn window_stream(&self) -> WindowStream {
         WindowStream::new()
+    }
+
+    pub fn focus_tiling(&self) -> Result<HashMap<String, Output>, Error> {
+        let reply = request(Request::Action(Action::FocusTiling {}))?;
+        reply::typed!(Outputs, reply)
     }
 }
 

@@ -6,6 +6,9 @@ Displays ordered list of workspaces, each with a list of its windwows ordered by
 workspace position (floating windows last). Current workspace and focused window
 are highlighted.
 
+Also implementa a few waybar unrelated niri extensions. E.g. option to automatically
+switch to tiling layer when closing a (floating) window.
+
 ![Example screenshot](images/screenshot.png)
 
 ## Installation
@@ -35,8 +38,8 @@ sense.
 
 ## Configuration
 
-This uses the normal configuration for a [CFFI Waybar module][cffi], which in
-practice will look something like this:
+This is extended configuration for a [CFFI Waybar module][cffi]. In practice,
+it will look something like this:
 
 ```jsonc
 {
@@ -44,9 +47,14 @@ practice will look something like this:
   // ...
   "cffi/niri-taskbar": {
     "module_path": "/your/path/to/libniri_taskbar.so",
+    // Bar orientation - vertical/horizontal
     "orientation": "vertical",
+    // Workspace separator for unfocussed workspaces
     "workspace_format": "󱋰󱋰",
-    "workspace_format_focused": "󱋰󱋰"
+    // Workspace separator for focussed owrkspaces
+    "workspace_format_focused": "󱋰󱋰",
+    // Return to tiling layer when closing a (floating) window
+    "close_to_tiling": false
   }
 }
 ```

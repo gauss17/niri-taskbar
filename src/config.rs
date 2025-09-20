@@ -19,6 +19,8 @@ pub struct Config {
     workspace_format: String,
     #[serde(default)]
     workspace_format_focused: String,
+    #[serde(default)]
+    close_to_tiling: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -130,6 +132,10 @@ impl Config {
 
     pub fn workspace_format_focused(&self) -> &str {
         &self.workspace_format_focused
+    }
+
+    pub fn close_to_tiling(&self) -> bool {
+        self.close_to_tiling
     }
 }
 

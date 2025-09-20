@@ -1,16 +1,13 @@
 use async_channel::{Receiver, Sender};
 use niri_ipc::Request;
 
-use crate::error::Error;
+use crate::{error::Error, niri::state::LayoutEvent};
 
-use super::{
-    reply, socket,
-    state::{Snapshot, WindowSet},
-};
+use super::{reply, socket, state::WindowSet};
 
 /// A stream that receives events from Niri and produces a stream of window [`Snapshot`]s.
 pub struct WindowStream {
-    rx: Receiver<Snapshot>,
+    rx: Receiver<LayoutEvent>,
 }
 
 impl WindowStream {
@@ -26,12 +23,12 @@ impl WindowStream {
     }
 
     /// Awaits the next [`Snapshot`].
-    pub async fn next(&self) -> Option<Snapshot> {
+    pub async fn next(&self) -> Option<LayoutEvent> {
         self.rx.recv().await.ok()
     }
 }
 
-fn window_stream(tx: Sender<Snapshot>) -> Result<(), Error> {
+fn window_stream(tx: Sender<LayoutEvent>) -> Result<(), Error> {
     let mut socket = socket()?;
     let reply = socket.send(Request::EventStream).map_err(Error::NiriIpc)?;
     reply::typed!(Handled, reply)?;
@@ -43,8 +40,8 @@ fn window_stream(tx: Sender<Snapshot>) -> Result<(), Error> {
         // doesn't matter what happens to this process.
         match next() {
             Ok(event) => {
-                if let Some(snapshot) = state.with_event(event) {
-                    tx.send_blocking(snapshot)
+                for layout_event in state.with_event(event) {
+                    tx.send_blocking(layout_event)
                         .map_err(|_| Error::WindowStreamSend)?;
                 }
             }
